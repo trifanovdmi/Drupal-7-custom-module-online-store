@@ -1,0 +1,541 @@
+<?php
+function custom_module_menu(){
+
+	$items['ajax-catalog'] = array(
+	   'page callback' => 'custom_module_ajax_catalog',
+	   'access callback' => TRUE,
+	);
+	$items['ajax-catalog-add-order'] = array(
+	   'page callback' => 'custom_module_ajax_add_product_order',
+	   'access callback' => TRUE,
+	);
+	$items['ajax-catalog-info'] = array(
+	   'page callback' => 'custom_module_ajax_catalog_get_info',
+	   'access callback' => TRUE,
+	);
+	$items['ajax-cart'] = array(
+	   'page callback' => 'custom_module_ajax_cart',
+	   'access callback' => TRUE,
+	);
+
+	return $items;
+}
+function custom_module_ajax_cart(){
+
+	global $user; 
+	$order = commerce_cart_order_load($user->uid);
+	echo count($order->commerce_line_items['und']);
+}
+function custom_module_ajax_catalog_get_info(){
+
+	$nid = $_GET['nid'];
+	$node = node_load($nid);
+	$info = theme('render_catalog_info', array('current_node' => $node));
+	echo $info;
+}
+function custom_module_ajax_add_product_order(){
+
+	global $user;
+	$product_id = $_GET['product'];
+	$quantity = $_GET['quantity'];
+	$node = node_load($_GET['nid']);
+	$product = 	commerce_product_load($product_id);
+	$line_item = commerce_product_line_item_new($product, $quantity);
+	if(isset($node->field_img_product['und'])){
+		$line_item->field_img['und'][]['value'] = $node->field_img_product['und'][0]['uri'];
+	}
+	$line_item_added = commerce_cart_product_add($user->uid, $line_item);
+	echo '<div>
+			<div class="b-popup-wrap-message-product">Товар <div class="b-popup-title-product">'.$node->title.'</div> в количестве (<b>'.$quantity.'</b>), успешно добавлен в корзину.</div>
+			<div class="b-popup-go-to-cart">Для просмотра покупок можете перейти в <a href="/cart">корзину</a>.</div>
+		</div>';
+}
+
+function custom_module_switcher_term(){
+
+	if(isset($_GET['filter']['type_catalog'])){
+		$term_type_catalog = $_GET['filter']['type_catalog'];
+	}
+	elseif(arg(1) == 'term'){
+		$term_type_catalog = arg(2);
+	}
+	if(isset($term_type_catalog)){
+
+		return $term_type_catalog;
+	}
+	else {
+
+		return false;
+	}
+}
+
+function custom_module_ajax_catalog($sort = null, $count = null){
+
+	$type_catalog = custom_module_switcher_term();
+	
+	// Filters default values in the absence of incoming get parameters. 
+
+	if(isset($_GET['filter']['sort_type'])){
+		$sort_type = $_GET['filter']['sort_type'];
+		}
+	else{
+		if($sort != null) {
+			$sort_type = $sort;
+		}
+		else {
+			$sort_type = "post-date";
+		}
+	}
+	if(isset($_GET['filter']['sort_method'])){
+		$sort_method = $_GET['filter']['sort_method'];
+	}
+	else {
+		$sort_method = 'DESC';
+	}
+	
+	if(isset($_GET['filter']['count'])){
+		$count_on_page = $_GET['filter']['count'];
+	}
+	else {
+		if($count != null) {
+			$count_on_page = $count;
+		}
+		else {
+			$count_on_page = 10;
+		}
+	}
+	if(isset($_GET['filter']['page'])){
+		$current_page = $_GET['filter']['page'];
+	}
+	else {
+		$current_page = 1;
+	}
+
+	// Zero values ​​when they are empty.
+
+	$criteria = array(
+		'fuil'			 => ($_GET['filter']['fuel'] != 0)? $_GET['filter']['fuel'] : null, 
+		'combustion' 	 => ($_GET['filter']['combustion'] != 0)? $_GET['filter']['combustion'] : null,
+		'material' 	 	 => ($_GET['filter']['material'] != 0)? $_GET['filter']['material'] : null,
+		'manufacturer' 	 => ($_GET['filter']['manufacturers'] != 0)? $_GET['filter']['manufacturers'] : null,
+		'position' 	 	 => ($_GET['filter']['position'] != 0)? $_GET['filter']['position'] : null,
+		'contours' 	 	 => ($_GET['filter']['contours'] != 0)? $_GET['filter']['contours'] : null,
+		'area' 	 	 	 => ($_GET['filter']['area'] != '' || $_GET['filter']['area'] > 1)? $_GET['filter']['area'] : null,
+		'price_min' 	 => ($_GET['filter']['min_price'] != 0)? $_GET['filter']['min_price'] : 1000,
+		'price_max' 	 => ($_GET['filter']['max_price'] != 0)? $_GET['filter']['max_price'] : 100000,
+		'page_current'   => $current_page,
+		'count_to_page'  => $count_on_page,
+		'offset'         => ($current_page - 1) * $count_on_page,
+	);
+
+	// Request to database.
+
+	$query_product = new EntityFieldQuery();
+	$query_product->entityCondition('entity_type', 'commerce_product')
+	   ->entityCondition('bundle', 'product')
+	   ->propertyCondition('status', 1)
+	   ->fieldCondition('commerce_price', 'amount', $criteria['price_min'], '>=')
+	   ->fieldCondition('commerce_price', 'amount', $criteria['price_max'], '<=');
+	$query_product->fieldOrderBy('commerce_price', 'amount', 'ASC');
+	$result_product = $query_product->execute();
+	if (isset($result_product['commerce_product'])) 
+	$product_ids = array_keys($result_product['commerce_product']);
+	if(!empty($product_ids)){
+	$query = new EntityFieldQuery();
+	$query->entityCondition('entity_type', 'node');
+	$query->entityCondition('bundle', 'product');
+	$query->propertyCondition('status', NODE_PUBLISHED);
+
+	if($type_catalog == 30 || $type_catalog == false){
+		$query->fieldCondition('field_type_product', 'tid', 30);
+	}
+	elseif($type_catalog == 21 || $type_catalog == 22){
+		$query->fieldCondition('field_position', 'tid', $type_catalog);
+	}
+	elseif($type_catalog == 31) {
+		$query->fieldCondition('field_type_product', 'tid', 31);
+	}
+	else {
+		$query->fieldCondition('field_type_of_additional_produc', 'tid', $type_catalog);
+	}
+
+	if(!empty($criteria['fuil']))
+	$query->fieldCondition('field_fuil', 'tid', $criteria['fuil']);
+	if(!empty($criteria['combustion']))
+	$query->fieldCondition('field_combustion', 'tid', $criteria['combustion']);
+	if(!empty($criteria['material']))
+	$query->fieldCondition('field_material', 'tid', $criteria['material']);
+	if(!empty($criteria['manufacturer']))
+	$query->fieldCondition('field_manufacturer', 'tid', $criteria['manufacturer']);
+	if(!empty($criteria['position']))
+	$query->fieldCondition('field_position', 'tid', $criteria['position']);
+	if(!empty($criteria['contours']))
+	$query->fieldCondition('field_contours', 'tid', $criteria['contours']);
+	if(!empty($criteria['area']))
+	$query->fieldCondition('field_area', 'value', $criteria['area'], '<=');
+	$query->fieldCondition('field_product ', 'product_id', (array)$product_ids, 'IN', 0);
+	if($sort_type == 'post-date')
+	$query->propertyOrderBy('created', $sort_method);
+	if($sort_type == 'price')
+	$query->fieldOrderBy('field_price_for_sort', 'value', $sort_method);
+
+	$result_all = $query->execute();
+	$query->range($criteria['offset'], $criteria['count_to_page']);
+	$result = $query->execute();
+	}
+
+	// Getting objects nodes
+
+	if (isset($result['node'])) {
+	  $catalog_items_nids = array_keys($result['node']);
+	  $catalog_items_all = node_load_multiple($catalog_items_nids);
+	  $catalog_items = $catalog_items_all;
+	} 
+	else {
+	  $catalog_items = null;
+	}
+
+	// Values for custom pager widget.
+
+	$count_all = count($result_all['node']);
+	$count_items = count($catalog_items);
+	$count_pages = ceil($count_all/$criteria['count_to_page']);
+
+	$pager = array(
+		'count' 	   => $count_pages,
+		'current' 	   => $criteria['page_current'],
+	);
+
+	// Theming products catalog.
+
+	$catalog = theme('render_catalog', array('node_list' => $catalog_items, 'node_count' => $count_all, 'pager' => $pager));
+
+	echo $catalog;
+}
+
+// Custom render select field.
+
+function custom_module_render_filter_input($type, $placeholder = null, $icon_link = null, $vocabulary = null){
+
+	//	Type of price type field.
+
+	if($type == 'numeric'){
+		$output = '<div class="form-filter-group-numeric">';
+		$type_sort = array(
+			'max' => 'DESC', 
+			'min' => 'ASC',
+		);
+		foreach ($type_sort as $key => $value) {
+			$query_product = new EntityFieldQuery();
+			$query_product->entityCondition('entity_type', 'commerce_product')
+			   ->entityCondition('bundle', 'product')
+			   ->propertyCondition('status', 1)
+			   ->fieldOrderBy('commerce_price', 'amount', $value)
+			   ->range(0, 1)
+			;
+			$result_product = $query_product->execute();
+			if (isset($result_product['commerce_product'])) {
+				$product_id = key($result_product['commerce_product']);
+				$product = commerce_product_load($product_id);
+				$price[$key] = $product->commerce_price['und'][0]['amount'];
+			}
+		}
+
+		$output .= '<div data-price-result-min="'.$price['min'].'" data-price-result-max="'.$price['max'].'" data-price-min="'.$price['min'].'" data-price-max="'.$price['max'].'" id="slider-range"></div>';
+		$output .= '<div class="form-filter-numeric-range">
+			<div class="form-filter-numeric-price-min">'.$price['min'].' руб.</div>
+			<div class="form-filter-numeric-price-max">'.$price['max'].' руб.</div>
+		</div>';
+		$output .= '<div id="amount"></div>';
+		$output .= '</div>';
+	}
+
+	// Type of taxnomy terms field.
+
+	if($type == 'terms'){
+		$output = '<div class="form-filter-group-terms">';
+		$voc = taxonomy_vocabulary_machine_name_load($vocabulary);
+		$tree = taxonomy_get_tree($voc->vid);
+		$output .= '<div class="select-styles-wrap vocabulary-'.$vocabulary.'">
+            <div class="select-styles wrap-float">
+              <div class="select-styles-icon"><img src="'.$icon_link.'"></div>
+              <div data-select-id="'.$vocabulary.'" data-select-result="0" data-select-placeholder="'.$placeholder.'" class="select-styles-placeholder select-styles-main">'.$placeholder.'</div>
+              <div class="select-styles-button"><i class="fa fa-chevron-down"></i></div>
+            </div>
+            <div class="select-styles-dropdown-block">
+              <div data-select="reset" class="select-styles-dropdown-item select-reset">Не выбрано</div>';
+		foreach ($tree as $term) {
+		 	$output .= '<div data-select="'.$term->tid.'" class="select-styles-dropdown-item">'.$term->name.'</div>';
+		}
+		$output .= '</div></div></div>';
+	}
+
+	// Type of text type field.
+
+	if($type == 'text'){
+		$output = '<div class="b-form-filter-group-text custom-text-input wrap-float">
+			<div class="b-form-filter-text-icon"><img src="'.$icon_link.'"></div>
+			<div class="b-form-filter-text-input">
+				<input type="text" value placeholder="'.$placeholder.'">
+			</div>
+		</div>';
+	}
+
+	return $output;
+}
+
+// Theming custom templates.
+
+function custom_module_theme($existing, $type, $theme, $path){
+
+	if($type = 'module'){
+		return array(
+		    'render_catalog' => array( 
+		      'template' => 'custom_catalog',
+		    	),  
+		
+		    'render_catalog_info' => array(
+				'template' => 'custom_catalog_info', 
+				), 
+		);
+	}
+}
+
+function custom_module_commerce_currency_info_alter(&$currencies, $langcode) {
+  	$currencies['RUB']['decimals'] = 0; 
+}
+
+// Render custom pager widget.
+
+function custom_module_render_pager($count = null, $current = null){
+	if($count != $current && $count > 0){
+		$output = '<div class="b-pager-list">';
+		$array_items = range(1, $count);
+		$array = array($current - 1, $current, $current + 1);
+		$result_array = array();
+		if($count > 4){
+			if(in_array(1,$array)){
+			$result_array = array(1,2,3, 'after' => $count);
+			}
+			else if($current == 3){
+				$result_array = array(1,2,3,4, 'after' => $count);
+			}
+			else if(!in_array(1,$array) && !in_array($count, $array) && $current != 3 && $current != $count - 2){
+				$result_array = array('before' => 1, $current - 1, $current, $current + 1, 'after' => $count);
+			}
+			else if ($current == $count - 2){
+				$result_array = array('before' => 1,$count - 3, $count - 2, $count -1, $count);
+			}
+			else if(in_array($count, $array)){
+				$result_array = array('before' => 1, $count - 2, $count -1, $count);
+			}
+		}
+		else {
+			$result_array = $array_items;
+		}
+		foreach ($result_array as $key => $value) {
+		
+			$output .= '<div class="b-pager-item">';
+			if($key === 'after'){
+				$output .= '<span>...</span>';
+			}
+			if($value == $current){
+				$output .= '<a data-pager="'.$value.'" href="" class="active">'.$value.'</a>';
+			}
+			else {
+				$output .= '<a data-pager="'.$value.'" href="" >'.$value.'</a>';
+			}
+			if($key === 'before'){
+				$output .= '<span>...</span>';
+			}
+			$output .='</div>';
+		}
+		$output .= '</div>';
+
+		return $output;
+	}
+	if($count < 1){
+		return '<div class="empty-result">По Вашему запросу нет результатов</div>';
+	}
+}
+
+// Getting name term by tid.
+
+function custom_module_render_name_term($tid) {
+	$term = taxonomy_term_load($tid);
+	$name = $term->name;
+
+	return $name;
+}
+
+// Price difference calculation.
+
+function custom_module_benefit_price($node, $product){
+	$result = array();
+	$result['old'] = $node->field_old_price['und'][0]['value'];
+	$result['current_price'] = $product->commerce_price['und'][0]['amount'];
+	$result['benefit'] = $result['old'] - $result['current_price'];
+
+	return $result;
+}
+
+// Custom form alter.
+
+function custom_module_form_alter(&$form, &$form_state, $form_id){
+	if($form_id == 'product_node_form'){
+		$form['field_price_for_sort']['#type'] = "hidden";
+		$form['#submit'][] = 'custom_module_form_write_sort_field';
+	}
+	if($form_id == 'commerce_checkout_form_checkout'){
+		// Edit title billing information. 
+		$form['customer_profile_billing']['#title'] = t('Billing information');
+	}
+	if (isset($form['cart_contents'])){
+	    $form['cart_contents']['cart_contents_view']['#markup'] = str_replace('Order total', t('Order total'), 
+	    $form['cart_contents']['cart_contents_view']['#markup']);
+	  }
+}
+
+// Custom breadbrumbs.
+
+function custom_module_breadcrumb($node){
+	$link = 'http'.$_SERVER['HTTP_HOST'];
+	$breadcrumb = '<a href="'.$link.'">Главная</a>';
+	switch ($node->type) {
+		case 'product':
+			if(isset($node->field_type_product['und'])){
+				if($node->field_type_product['und'][0]['tid'] == 30){
+						$breadcrumb .= '  /  <a href="#">Каталог отопительной техники</a>';
+					if(isset($node->field_position['und'])){
+						if($node->field_position['und'][0]['tid'] == 21){
+							$breadcrumb .= '  /  <a href="#">Напольные котлы</a>';
+						}
+						else {
+								$breadcrumb .= '  /  <a href="#">Настенные котлы</a>';
+						}
+					}
+				}
+				else{
+						$breadcrumb .= '  /  <a href="#">Каталог дополнительного оборудования</a>';
+				}
+			}	
+				break;
+			default:	
+			break;
+	}
+	$breadcrumb .= '  /  <span>'.$node->title.'</span>';
+
+	return $breadcrumb;
+}
+
+// Custom prev/next page widget.
+
+function custom_module_prev_next_node($current_node = NULL, $node_types = array()) {
+
+    // make node object if only node id given.
+
+    if (!is_object($current_node)) { $current_node = node_load($current_node->nid); }
+
+    // make an array if string value was given.
+
+    if (!is_array($node_types)) { $node_types = array($node_types); }
+
+    // previous.
+
+    $prev = db_select('node', 'n')
+    ->fields('n',array('nid','title','created'))
+    ->condition('n.status', 1,'=')
+    ->condition('n.type', $node_types,'IN')
+    ->condition('n.created', $current_node->created,'<')
+    ->orderBy('created','DESC')
+    ->range(0,1)
+    ->execute()
+    ->fetchAssoc();
+
+    // next or false if none.
+    
+    $next = db_select('node', 'n')
+    ->fields('n',array('nid','title','created'))
+    ->condition('n.status', 1,'=')
+    ->condition('n.type', $node_types,'IN')
+    ->condition('n.created', $current_node->created,'>')
+    ->orderBy('created','ASC')
+    ->range(0,1)
+    ->execute()
+    ->fetchAssoc();
+
+    return array('prev' => $prev, 'next' => $next);
+}
+
+function custom_module_form_write_sort_field(&$form, &$form_state){
+
+	$price = $form_state['values']['field_product']['und']['form']['commerce_price']['und'][0]['amount'];
+	$form_state['values']['field_price_for_sort']['und'][0]['value'] = $price;	
+}
+
+// Custom edit form update user cart.
+
+function custom_module_form_views_form_commerce_cart_form_default_alter(&$form, &$form_state) {
+
+  $form['#action'] = url('cart');
+  $form['actions']['submit']['#name'] = 'update-cart';
+  $form['actions']['submit']['#ajax'] = array(
+    'callback' => 'custom_module_cart_form_ajax_update',
+  );
+  if (!empty($form['edit_delete'])) {
+    foreach(element_children($form['edit_delete']) as $key) {
+      if (!empty($form['edit_delete'][$key]['#line_item_id'])) {
+        $form['edit_delete'][$key]['#ajax'] = array(
+          'callback' => 'custom_module_remove_ajax',
+        );
+      }
+    }
+  }
+  foreach (element_children($form['edit_quantity']) as $key) {
+    $form['edit_quantity'][$key]['#ajax'] = array(
+      'callback' => '',
+      'event' => 'change',
+      'progress' => 'none',
+      'trigger_as' => array(
+        'name' => 'update-cart',
+      )
+    );
+  }
+}
+ 
+// Callback ajax update cart.
+
+function custom_module_cart_form_ajax_update($form, &$form_state) {
+
+  drupal_get_messages();
+  $_POST = array();
+  $view = $form_state['build_info']['args'][0];
+  $order_id = commerce_cart_order_id($GLOBALS['user']->uid);
+  $cart_view_output = commerce_embed_view($view->name, $view->current_display, array($order_id));
+ 
+  return array(
+    '#type' => 'ajax',
+    '#commands' => array(
+      ajax_command_replace('.view-commerce-cart-form', $cart_view_output),
+    ),
+  );
+}
+
+// Callback ajax delete item in user cart.
+
+function custom_module_remove_ajax($form, &$form_state) {
+
+  drupal_get_messages();
+  $_POST = array(); 
+  $view = $form_state['build_info']['args'][0];
+  $order_id = commerce_cart_order_id($GLOBALS['user']->uid);
+  $cart_view_output = commerce_embed_view($view->name, $view->current_display, array($order_id));
+
+  return array(
+    '#type' => 'ajax',
+    '#commands' => array(
+      ajax_command_replace('.view-commerce-cart-form', $cart_view_output),
+    ),
+  );
+}
+?>
